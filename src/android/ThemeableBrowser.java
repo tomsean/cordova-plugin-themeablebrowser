@@ -1223,36 +1223,30 @@ public class ThemeableBrowser extends CordovaPlugin {
         }
 
         /**
-         * Notify the host application that a page has started loading.
+         * This handles a small subset of all the URIs that would be encountered.
          *
          * @param view The webview initiating the callback.
          * @param url  The url of the page.
          */
         @Override
-        public void onPageStarted(WebView view, String url, Bitmap favicon) {
-            super.onPageStarted(view, url, favicon);
-            String newloc = "";
-            if (url.startsWith("http:") || url.startsWith("https:") || url.startsWith("file:")) {
-                newloc = url;
-            }
-            // If dialing phone (tel:5551212)
-            else if (url.startsWith(WebView.SCHEME_TEL)) {
+        public boolean shouldOverrideUrlLoading(WebView webView, String url) {
+            if (url.startsWith(WebView.SCHEME_TEL)) {
                 try {
                     Intent intent = new Intent(Intent.ACTION_DIAL);
                     intent.setData(Uri.parse(url));
                     cordova.getActivity().startActivity(intent);
+                    return true;
                 } catch (android.content.ActivityNotFoundException e) {
-                    emitError(ERR_CRITICAL,
-                            String.format("Error dialing %s: %s", url, e.toString()));
+                    Log.e(LOG_TAG, "Error dialing " + url + ": " + e.toString());
                 }
             } else if (url.startsWith("geo:") || url.startsWith(WebView.SCHEME_MAILTO) || url.startsWith("market:")) {
                 try {
                     Intent intent = new Intent(Intent.ACTION_VIEW);
                     intent.setData(Uri.parse(url));
                     cordova.getActivity().startActivity(intent);
+                    return true;
                 } catch (android.content.ActivityNotFoundException e) {
-                    emitError(ERR_CRITICAL,
-                            String.format("Error with %s: %s", url, e.toString()));
+                    Log.e(LOG_TAG, "Error with " + url + ": " + e.toString());
                 }
             }
             // If sms:5551212?body=This is the message
@@ -1281,15 +1275,39 @@ public class ThemeableBrowser extends CordovaPlugin {
                     intent.putExtra("address", address);
                     intent.setType("vnd.android-dir/mms-sms");
                     cordova.getActivity().startActivity(intent);
+                    return true;
                 } catch (android.content.ActivityNotFoundException e) {
-                    emitError(ERR_CRITICAL,
-                            String.format("Error sending sms %s: %s", url, e.toString()));
+                    Log.e(LOG_TAG, "Error sending sms " + url + ":" + e.toString());
                 }
-            } else {
+            }
+            return false;
+        }
+
+
+        /*
+         * onPageStarted fires the LOAD_START_EVENT
+         *
+         * @param view
+         * @param url
+         * @param favicon
+         */
+        @Override
+        public void onPageStarted(WebView view, String url, Bitmap favicon) {
+            super.onPageStarted(view, url, favicon);
+            String newloc = "";
+            if (url.startsWith("http:") || url.startsWith("https:") || url.startsWith("file:")) {
+                newloc = url;
+            }
+            else
+            {
+                // Assume that everything is HTTP at this point, because if we don't specify,
+                // it really should be.  Complain loudly about this!!!
+                Log.e(LOG_TAG, "Possible Uncaught/Unknown URI");
                 newloc = "http://" + url;
             }
 
-            if (edittext != null && !newloc.equals(edittext.getText().toString())) {
+            // Update the UI if we haven't already
+            if (!newloc.equals(edittext.getText().toString())) {
                 edittext.setText(newloc);
             }
 
@@ -1297,9 +1315,9 @@ public class ThemeableBrowser extends CordovaPlugin {
                 JSONObject obj = new JSONObject();
                 obj.put("type", LOAD_START_EVENT);
                 obj.put("url", newloc);
-
                 sendUpdate(obj, true);
             } catch (JSONException ex) {
+                Log.e(LOG_TAG, "URI passed in has caused a JSON error.");
             }
         }
 
